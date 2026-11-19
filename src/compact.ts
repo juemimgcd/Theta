@@ -14,6 +14,7 @@ export async function prepareCompaction(
   budget: Budget,
   signal: AbortSignal,
   trigger: "budget" | "manual" = "budget",
+  log: (message: string) => void = console.error,
 ): Promise<CompactionEntry | undefined> {
   signal.throwIfAborted();
   const before = estimateMessages(buildContext(entries));
@@ -74,7 +75,7 @@ export async function prepareCompaction(
       throw error;
     }
     const detail = error instanceof Error ? error.message : String(error);
-    console.error(`[compact] 本次未压缩，原上下文仍在估算预算内：${detail}`);
+    log(`[compact] 本次未压缩，原上下文仍在估算预算内：${detail}`);
     return undefined;
   }
 }

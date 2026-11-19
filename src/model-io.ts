@@ -24,18 +24,8 @@ export function createModelIO(
     tools.map(({ name, description, schema }) => ({ name, description, schema })),
   );
   const summarizer = new ChatOpenAI({ ...options, maxTokens: budget.summaryOutputTokens });
-  const debug = (process.env.THETA_DEBUG_CONTEXT ?? process.env.ALPHA_DEBUG_CONTEXT) === "1";
-  let requestNumber = 0;
-
   return {
     async request(messages, signal, onText) {
-      const size = estimateMessages(messages);
-      if (size > budget.messageLimit) throw new Error(`主请求估算 ${size} tokens，超出消息预算 ${budget.messageLimit}`);
-      requestNumber++;
-      if (debug) {
-        console.error(`[context] 第 ${requestNumber} 次请求，${messages.length} 条消息`);
-        console.error(JSON.stringify(messages.map(message => message.toDict()), null, 2));
-      }
       if (!onText) {
         const response = await chat.invoke(messages, { signal });
         // 部分兼容服务省略 usage，LangChain 此时仍可能返回缺少计数的用量对象。
@@ -72,11 +62,27 @@ export function createModelIO(
     },
 
     async summarize(messages, signal) {
+      return summarizer.invoke(messages, { signal });
+    },
+  };
+}
+
+export function withBudget(model: ModelIO, budget: Budget, log: (text: string) => void): ModelIO {
+  const debug = (process.env.THETA_DEBUG_CONTEXT ?? process.env.ALPHA_DEBUG_CONTEXT) === "1";
+  let requestNumber = 0;
+  return {
+    async request(messages, signal, onText) {
+      const size = estimateMessages(messages);
+      if (size > budget.messageLimit) throw new Error(`主请求估算 ${size} tokens，超出消息预算 ${budget.messageLimit}`);
+      if (debug) log(`[context] 第 ${++requestNumber} 次请求，${messages.length} 条消息\n${JSON.stringify(messages.map(m => m.toDict()), null, 2)}`);
+      return model.request(messages, signal, onText);
+    },
+    async summarize(messages, signal) {
       const limit = budget.contextWindow - budget.summaryOutputTokens - budget.safetyTokens;
       const size = estimateMessages(messages);
       if (size > limit) throw new Error(`摘要输入估算 ${size} tokens，超出预算 ${limit}`);
-      const result = await summarizer.invoke(messages, { signal });
-      if (debug) console.error("[summary usage]", result.usage_metadata);
+      const result = await model.summarize(messages, signal);
+      if (debug) log(`[summary usage] ${JSON.stringify(result.usage_metadata)}`);
       return result;
     },
   };

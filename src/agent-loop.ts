@@ -73,7 +73,11 @@ export async function runLoop(
       hasAnswer: calls.length === 0,
     };
     await emit({ type: "turn_end", ...info });
-    signal.throwIfAborted();
+    if (signal.aborted) {
+      // All tool results have been recorded, including calls skipped after cancellation.
+      await emit({ type: "run_boundary", next: "input", turns: turn, maxTurns });
+      signal.throwIfAborted();
+    }
 
     for (const hook of hooks) {
       const reason = await hook.afterTurn?.({ ...info }, signal);
