@@ -1,29 +1,26 @@
 import { SystemMessage } from "@langchain/core/messages";
+import type { Accounts } from "./accounts.ts";
+import { createCatalogIO } from "./catalog-model.ts";
 import { createBudget } from "./budget.ts";
 import { Agent } from "./agent.ts";
 import { AgentSession } from "./agent-session.ts";
 import { bashTool } from "./builtin-tools/bash.ts";
 import { editTool } from "./builtin-tools/edit.ts";
-import { readTool } from "./builtin-tools/read.ts";
+import { createReadTool } from "./builtin-tools/read.ts";
 import { writeTool } from "./builtin-tools/write.ts";
 import type { Hook } from "./hooks.ts";
-import { createModelIO } from "./model-io.ts";
+import { createModelIO, withBudget } from "./model-io.ts";
 import { truncateOutput } from "./tools.ts";
 import type { Tool } from "./tools.ts";
 
-export async function createSession(cwd: string, filePath?: string): Promise<AgentSession> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  const modelName = process.env.OPENAI_MODEL;
-  const baseURL = process.env.OPENAI_BASE_URL;
+export async function createSession(accounts: Accounts, cwd: string, filePath?: string, options: {
+  log?: (message: string) => void;
+  beforeTool?: Hook["beforeTool"];
+} = {}): Promise<AgentSession> {
+  const config = await accounts.connection();
+  const log = options.log ?? console.error;
 
-  if (apiKey === undefined || apiKey.trim() === "") {
-    throw new Error("请在 .env 中填写 OPENAI_API_KEY");
-  }
-  if (modelName === undefined || modelName.trim() === "") {
-    throw new Error("请在 .env 中填写 OPENAI_MODEL");
-  }
-
-  const tools: Tool[] = [readTool, writeTool, editTool, bashTool];
+  const tools: Tool[] = [createReadTool(accounts.credentialPaths), writeTool, editTool, bashTool];
   const names = new Set<string>();
   for (const tool of tools) {
     if (names.has(tool.name)) {
@@ -48,7 +45,7 @@ export async function createSession(cwd: string, filePath?: string): Promise<Age
     afterModel(response) {
       const usage = response.usage_metadata;
       if (usage !== undefined) {
-        console.error(`[usage] 输入 ${usage.input_tokens}，输出 ${usage.output_tokens}`);
+        log(`[usage] 输入 ${usage.input_tokens}，输出 ${usage.output_tokens}`);
       }
     },
     beforeTool(call) {
@@ -66,11 +63,14 @@ export async function createSession(cwd: string, filePath?: string): Promise<Age
     },
   }];
 
-  const budget = createBudget(tools);
-  const model = createModelIO(modelName, apiKey, tools, budget, baseURL);
+  const budget = createBudget(tools, config.type === "catalog" ? config.model : undefined);
+  if (options.beforeTool) hooks.push({ beforeTool: options.beforeTool });
+  const transport = config.type === "catalog" ? createCatalogIO(config, tools, budget)
+    : createModelIO(config.model, config.apiKey, tools, budget, config.baseURL);
+  const model = withBudget(transport, budget, log);
   const agent = new Agent(model, tools, cwd, hooks, 8);
   if (filePath !== undefined) {
-    return await AgentSession.load(agent, cwd, filePath, model, budget);
+    return await AgentSession.load(agent, cwd, filePath, model, budget, log);
   }
-  return await AgentSession.create(agent, cwd, model, budget);
+  return await AgentSession.create(agent, cwd, model, budget, log);
 }

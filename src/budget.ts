@@ -26,13 +26,14 @@ export function estimateMessages(messages: BaseMessage[]): number {
   return total;
 }
 
-export function createBudget(tools: readonly Tool[]): Budget {
-  const contextWindow = z.coerce.number().int().min(8192).parse(
+export function createBudget(tools: readonly Tool[], model?: { contextWindow: number; maxTokens: number }): Budget {
+  const configuredWindow = z.coerce.number().int().min(8192).parse(
     process.env.THETA_CONTEXT_WINDOW ?? process.env.ALPHA_CONTEXT_WINDOW ?? "32768",
   );
-  const outputTokens = 4096;
-  const summaryOutputTokens = 2048;
-  const safetyTokens = 2048;
+  const contextWindow = Math.min(configuredWindow, model?.contextWindow ?? configuredWindow);
+  const outputTokens = model ? Math.min(4096, model.maxTokens, Math.floor(contextWindow / 3)) : 4096;
+  const summaryOutputTokens = Math.min(2048, outputTokens);
+  const safetyTokens = model ? Math.min(2048, Math.floor(contextWindow / 8)) : 2048;
   const declarations = tools.map((tool) => ({
     name: tool.name,
     description: tool.description,

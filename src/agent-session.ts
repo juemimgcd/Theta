@@ -14,8 +14,10 @@ export class AgentSession {
   private model: ModelIO;
   private budget: Budget;
   private busy = false;
+  private log: (message: string) => void;
 
-  private constructor(agent: Agent, manager: SessionManager, model: ModelIO, budget: Budget) {
+  private constructor(agent: Agent, manager: SessionManager, model: ModelIO, budget: Budget, log: (message: string) => void) {
+    this.log = log;
     this.agent = agent;
     this.manager = manager;
     this.model = model;
@@ -29,13 +31,13 @@ export class AgentSession {
     });
   }
 
-  static async create(agent: Agent, cwd: string, model: ModelIO, budget: Budget): Promise<AgentSession> {
+  static async create(agent: Agent, cwd: string, model: ModelIO, budget: Budget, log: (message: string) => void = console.error): Promise<AgentSession> {
     const manager = await SessionManager.create(cwd, agent.getMessages());
     await manager.appendCheckpoint("input", 0, agent.getTurnLimit());
-    return new AgentSession(agent, manager, model, budget);
+    return new AgentSession(agent, manager, model, budget, log);
   }
 
-  static async load(agent: Agent, cwd: string, filePath: string, model: ModelIO, budget: Budget): Promise<AgentSession> {
+  static async load(agent: Agent, cwd: string, filePath: string, model: ModelIO, budget: Budget, log: (message: string) => void = console.error): Promise<AgentSession> {
     const manager = await SessionManager.load(filePath, cwd);
     try {
       agent.replaceMessages(manager.getMessages());
@@ -45,7 +47,7 @@ export class AgentSession {
         cause: error,
       });
     }
-    return new AgentSession(agent, manager, model, budget);
+    return new AgentSession(agent, manager, model, budget, log);
   }
 
   get filePath(): string {
@@ -56,10 +58,18 @@ export class AgentSession {
     return this.manager.id;
   }
 
+  getMessages(): BaseMessage[] {
+    return this.manager.getMessages();
+  }
+
   get checkpoint(): CheckpointEntry {
     const checkpoint = this.manager.checkpoint;
     if (!checkpoint) throw new Error(`会话没有可用的末尾检查点：${this.filePath}`);
     return checkpoint;
+  }
+
+  get acceptsInput(): boolean {
+    return this.manager.checkpoint?.next === "input";
   }
 
   private async atBoundary<T>(work: (checkpoint: CheckpointEntry) => Promise<T>): Promise<T> {
@@ -75,24 +85,24 @@ export class AgentSession {
   compact(signal: AbortSignal): Promise<boolean> {
     return this.atBoundary(async checkpoint => {
       if (checkpoint.next !== "input") throw new Error("请先从检查点恢复任务，再压缩历史。");
-      const entry = await prepareCompaction(this.manager.getEntries(), this.model, this.budget, signal, "manual");
+      const entry = await prepareCompaction(this.manager.getEntries(), this.model, this.budget, signal, "manual", this.log);
       if (!entry) return false;
       await this.manager.appendCompaction(entry);
       await this.manager.appendCheckpoint("input", checkpoint.turns, checkpoint.maxTurns);
-      console.error(`[compact] 估算 ${entry.tokensBefore} → ${entry.tokensAfter} tokens`);
+      this.log(`[compact] 估算 ${entry.tokensBefore} → ${entry.tokensAfter} tokens`);
       return true;
     });
   }
 
   private async prepareContext(signal: AbortSignal): Promise<BaseMessage[]> {
     const entry = await prepareCompaction(
-      this.manager.getEntries(), this.model, this.budget, signal,
+      this.manager.getEntries(), this.model, this.budget, signal, "budget", this.log,
     );
     signal.throwIfAborted();
     if (entry !== undefined) {
       // 保存错误不能当作摘要失败忽略。写失败后 Manager 会拒绝继续追加。
       await this.manager.appendCompaction(entry);
-      console.error(`[compact] 估算 ${entry.tokensBefore} → ${entry.tokensAfter}`);
+      this.log(`[compact] 估算 ${entry.tokensBefore} → ${entry.tokensAfter}`);
     }
     return buildContext(this.manager.getEntries());
   }
