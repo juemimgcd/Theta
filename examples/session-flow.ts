@@ -7,6 +7,7 @@ import { AgentSession } from "../src/coding-agent/agent-session.ts";
 import { createBudget } from "../src/models/budget.ts";
 import type { ModelIO } from "../src/models/model-io.ts";
 import { SessionManager } from "../src/coding-agent/session-manager.ts";
+import { buildSystemPrompt } from "../src/coding-agent/system-prompt.ts";
 
 const cwd = await mkdtemp(join(tmpdir(), "theta-session-"));
 const budget = createBudget([]);
@@ -17,7 +18,7 @@ const model: ModelIO = {
 };
 
 // 1. AgentSession.create 用 Agent 的初始消息创建会话文件，并订阅 Agent 的事件。
-const options = { model, tools: [], cwd, systemPrompt: "根据对话历史，用中文回答用户。" };
+const options = { model, tools: [], cwd, systemPrompt: buildSystemPrompt([]) };
 const agent = new Agent(options);
 const session = await AgentSession.create(agent, cwd, model, budget);
 await session.prompt("我叫小林。");

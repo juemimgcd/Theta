@@ -13,7 +13,7 @@ export function createCodingPolicy(
       if (readOnly) {
         return [
           ...messages.slice(0, 1),
-          new SystemMessage("本次只读，只允许 read；write、edit、bash 都会被策略拒绝。"),
+          new SystemMessage("This session is read-only. Only read is allowed. The policy denies write, edit, and bash."),
           ...messages.slice(1),
         ];
       }
