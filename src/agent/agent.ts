@@ -5,13 +5,22 @@ import type { PrepareContext } from "./agent-loop.ts";
 import type { AgentEndEvent, AgentEvent, EventListener, RunResult } from "./events.ts";
 import { copyMessages } from "./hooks.ts";
 import type { Hook } from "./hooks.ts";
-import type { ModelIO, ReplyMode } from "./model-io.ts";
+import type { ModelIO, ReplyMode } from "../models/model-io.ts";
 import type { Tool } from "./tools.ts";
 import { responseCalls, validateHistory } from "./protocol.ts";
 
+export type AgentOptions = {
+  model: Pick<ModelIO, "request">;
+  tools: readonly Tool[];
+  systemPrompt: string;
+  cwd: string;
+  hooks?: readonly Hook[];
+  maxTurns?: number;
+};
+
 export class Agent {
   private messages: BaseMessage[];
-  private model: ModelIO;
+  private model: Pick<ModelIO, "request">;
   private tools: readonly Tool[];
   private hooks: readonly Hook[];
   private cwd: string;
@@ -20,13 +29,8 @@ export class Agent {
   private listeners: Set<EventListener>;
   private deliveryFailed: boolean;
 
-  constructor(
-    model: ModelIO,
-    tools: readonly Tool[],
-    cwd: string,
-    hooks: readonly Hook[] = [],
-    maxTurns: number = 8,
-  ) {
+  constructor({ model, tools, systemPrompt, cwd, hooks = [], maxTurns = 8 }: AgentOptions) {
+
     if (!Number.isInteger(maxTurns) || maxTurns < 1) {
       throw new Error("maxTurns 必须是正整数");
     }
@@ -39,17 +43,7 @@ export class Agent {
     this.controller = undefined;
     this.listeners = new Set<EventListener>();
     this.deliveryFailed = false;
-    this.messages = [
-      new SystemMessage(
-        "你是 Theta，一个模仿 pi1 的 coding agent demo。" +
-        "你可以使用 read、write、edit、bash。涉及文件内容时先读取，不要猜测。" +
-        "write 用于创建或完整覆盖；局部修改先 read 再 edit。" +
-        "只执行用户任务所需的操作，修改完成后读取文件或运行合适命令核对。" +
-        "bash 只运行短时非交互命令，不启动后台服务。" +
-        "工具被策略拒绝时不要绕过限制，说明无法完成的部分。" +
-        "最终回答区分已经完成与尚未验证的内容。",
-      ),
-    ];
+    this.messages = [new SystemMessage(systemPrompt)];
   }
 
   getMessages(): BaseMessage[] {
@@ -74,12 +68,14 @@ export class Agent {
     this.messages = restored;
   }
 
+
   subscribe(listener: EventListener): () => void {
     this.listeners.add(listener);
     return () => {
       this.listeners.delete(listener);
     };
   }
+
 
   private async emit(event: AgentEvent): Promise<void> {
     if (event.type === "message_end") {

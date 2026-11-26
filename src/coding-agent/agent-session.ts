@@ -1,10 +1,9 @@
 import type { BaseMessage } from "@langchain/core/messages";
-import type { Budget } from "./budget.ts";
-import { prepareCompaction } from "./compact.ts";
-import type { ModelIO, ReplyMode } from "./model-io.ts";
-import type { Agent } from "./agent.ts";
-import { buildContext } from "./context.ts";
-import type { EventListener, RunResult } from "./events.ts";
+import type { Budget } from "../models/budget.ts";
+import { prepareRequestContext } from "./compact.ts";
+import type { ModelIO, ReplyMode } from "../models/model-io.ts";
+import type { Agent } from "../agent/agent.ts";
+import type { EventListener, RunResult } from "../agent/events.ts";
 import type { CheckpointEntry } from "./session-types.ts";
 import { SessionManager } from "./session-manager.ts";
 
@@ -40,7 +39,7 @@ export class AgentSession {
   static async load(agent: Agent, cwd: string, filePath: string, model: ModelIO, budget: Budget, log: (message: string) => void = console.error): Promise<AgentSession> {
     const manager = await SessionManager.load(filePath, cwd);
     try {
-      agent.replaceMessages(manager.getMessages());
+      agent.replaceMessages(manager.getHistoryMessages());
     } catch (error: unknown) {
       const detail = error instanceof Error ? error.message : String(error);
       throw new Error(`无法继续会话 ${manager.filePath}：${detail}。不会重放工具或删除记录`, {
@@ -58,8 +57,8 @@ export class AgentSession {
     return this.manager.id;
   }
 
-  getMessages(): BaseMessage[] {
-    return this.manager.getMessages();
+  getHistoryMessages(): BaseMessage[] {
+    return this.manager.getHistoryMessages();
   }
 
   get checkpoint(): CheckpointEntry {
@@ -85,7 +84,9 @@ export class AgentSession {
   compact(signal: AbortSignal): Promise<boolean> {
     return this.atBoundary(async checkpoint => {
       if (checkpoint.next !== "input") throw new Error("请先从检查点恢复任务，再压缩历史。");
-      const entry = await prepareCompaction(this.manager.getEntries(), this.model, this.budget, signal, "manual", this.log);
+      const { compaction: entry } = await prepareRequestContext(
+        this.manager.getContextSnapshot(), this.model, this.budget, signal, "manual", this.log,
+      );
       if (!entry) return false;
       await this.manager.appendCompaction(entry);
       await this.manager.appendCheckpoint("input", checkpoint.turns, checkpoint.maxTurns);
@@ -95,8 +96,8 @@ export class AgentSession {
   }
 
   private async prepareContext(signal: AbortSignal): Promise<BaseMessage[]> {
-    const entry = await prepareCompaction(
-      this.manager.getEntries(), this.model, this.budget, signal, "budget", this.log,
+    const { messages, compaction: entry } = await prepareRequestContext(
+      this.manager.getContextSnapshot(), this.model, this.budget, signal, "budget", this.log,
     );
     signal.throwIfAborted();
     if (entry !== undefined) {
@@ -104,7 +105,7 @@ export class AgentSession {
       await this.manager.appendCompaction(entry);
       this.log(`[compact] 估算 ${entry.tokensBefore} → ${entry.tokensAfter}`);
     }
-    return buildContext(this.manager.getEntries());
+    return messages;
   }
 
   prompt(input: string, replyMode: ReplyMode = "stream"): Promise<RunResult> {

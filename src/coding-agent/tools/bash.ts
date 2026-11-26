@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import type { Readable } from "node:stream";
 import { StringDecoder } from "node:string_decoder";
 import { z } from "zod";
-import { defineTool, truncateOutput } from "../tools.ts";
+import { defineTool, truncateOutput } from "../../agent/tools.ts";
 
 export const bashTool = defineTool({
   name: "bash",

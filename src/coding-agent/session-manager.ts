@@ -6,20 +6,24 @@ import { decodeMessage, encodeMessage } from "./message-codec.ts";
 import { checkpointEntrySchema, compactionEntrySchema, messageEntrySchema, sessionHeaderSchema, sessionRecordSchema } from "./session-types.ts";
 import type { CheckpointEntry, CompactionEntry, SessionEntry, SessionHeader, SessionRecord } from "./session-types.ts";
 
-import { inspectRecovery } from "./checkpoint.ts";
-import { buildContext } from "./context.ts";
+import { checkCheckpoint, recoverCheckpointCursor, type CheckpointCursor } from "./checkpoint.ts";
+import { projectContext, validateSessionMessages, type ContextParts } from "./context.ts";
 
 export class SessionManager {
   readonly filePath: string;
   private header: SessionHeader;
   private entries: SessionEntry[];
+  private readonly recordIds: Set<string>;
+  private cursor?: CheckpointCursor;
   private writing: boolean;
   private failed: boolean;
 
-  private constructor(filePath: string, header: SessionHeader, entries: SessionEntry[]) {
+  private constructor(filePath: string, header: SessionHeader, entries: SessionEntry[], recordIds: Set<string>, cursor?: CheckpointCursor) {
     this.filePath = filePath;
     this.header = header;
     this.entries = entries;
+    this.recordIds = recordIds;
+    this.cursor = cursor;
     this.writing = false;
     this.failed = false;
   }
@@ -49,7 +53,7 @@ export class SessionManager {
     const records: SessionRecord[] = [header, ...entries];
     const text = records.map((record) => JSON.stringify(record)).join("\n") + "\n";
     await writeFile(filePath, text, { encoding: "utf8", flag: "wx", mode: 0o600 });
-    return new SessionManager(filePath, header, entries);
+    return new SessionManager(filePath, header, entries, new Set(records.map(record => record.id)));
   }
 
   static async load(filePath: string, cwd: string): Promise<SessionManager> {
@@ -97,9 +101,8 @@ export class SessionManager {
     if (header === undefined) {
       throw new Error(`${absolutePath}：缺少 session 头部`);
     }
-    inspectRecovery(entries, header.id);
-    buildContext(entries);
-    return new SessionManager(absolutePath, header, entries);
+    const cursor = recoverCheckpointCursor(entries, header.id);
+    return new SessionManager(absolutePath, header, entries, ids, cursor);
   }
 
   static async latestPath(cwd: string): Promise<string> {
@@ -128,14 +131,22 @@ export class SessionManager {
     return !this.failed && tail?.type === "checkpoint" ? { ...tail } : undefined;
   }
 
-  getEntries(): SessionEntry[] {
+  private readableEntries(): SessionEntry[] {
     if (this.failed) {
       throw new Error("会话曾写入失败，磁盘状态不确定；请检查文件后重新加载");
     }
-    return structuredClone(this.entries);
+    return this.entries;
   }
 
-  getMessages(): BaseMessage[] {
+  getEntries(): SessionEntry[] {
+    return structuredClone(this.readableEntries());
+  }
+
+  getContextSnapshot(): ContextParts {
+    return structuredClone(projectContext(this.readableEntries()));
+  }
+
+  getHistoryMessages(): BaseMessage[] {
     const messages: BaseMessage[] = [];
     for (const entry of this.entries) {
       if (entry.type === "message") {
@@ -157,7 +168,7 @@ export class SessionManager {
 
   async appendCompaction(entry: CompactionEntry): Promise<void> {
     const checked = compactionEntrySchema.parse(entry);
-    buildContext([...this.entries, checked]);
+    projectContext([...this.entries, checked]);
     await this.appendEntry(checked);
   }
 
@@ -178,24 +189,32 @@ export class SessionManager {
       afterEntryId: previous.id,
       next, turns, maxTurns,
     });
-    inspectRecovery([...this.entries, entry], this.id);
-    await this.appendEntry(entry);
+    const end = this.entries.length;
+    const cursor = checkCheckpoint(this.entries, end, entry, this.id, this.cursor);
+    if (this.cursor) {
+      validateSessionMessages(this.entries, this.cursor.nextIndex);
+    } else {
+      projectContext(this.entries);
+    }
+    await this.appendEntry(entry, cursor);
   }
 
-  private async appendEntry(entry: SessionEntry): Promise<void> {
+  private async appendEntry(entry: SessionEntry, cursor?: CheckpointCursor): Promise<void> {
     if (this.failed) {
       throw new Error("会话之前保存失败，请检查文件后重新加载，不能直接重试追加");
     }
     if (this.writing) {
       throw new Error("会话正在写入，必须等待上一次追加结束");
     }
-    if (entry.id === this.header.id || this.entries.some((item) => item.id === entry.id)) {
+    if (this.recordIds.has(entry.id)) {
       throw new Error(`记录 ID 重复：${entry.id}`);
     }
     this.writing = true;
     try {
       await appendFile(this.filePath, JSON.stringify(entry) + "\n", "utf8");
       this.entries.push(entry);
+      this.recordIds.add(entry.id);
+      if (cursor) this.cursor = cursor;
     } catch (error: unknown) {
       this.failed = true;
       const detail = error instanceof Error ? error.message : String(error);
