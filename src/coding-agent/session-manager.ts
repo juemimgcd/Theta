@@ -6,7 +6,7 @@ import { decodeMessage, encodeMessage } from "./message-codec.ts";
 import { checkpointEntrySchema, compactionEntrySchema, messageEntrySchema, sessionHeaderSchema, sessionRecordSchema } from "./session-types.ts";
 import type { CheckpointEntry, CompactionEntry, SessionEntry, SessionHeader, SessionRecord } from "./session-types.ts";
 
-import { checkCheckpoint, recoverCheckpointCursor, type CheckpointCursor } from "./checkpoint.ts";
+import { checkCheckpoint, recoverCheckpointCursor, runPosition, type CheckpointCursor, type RunPosition } from "./checkpoint.ts";
 import { projectContext, validateSessionMessages, type ContextParts } from "./context.ts";
 
 export class SessionManager {
@@ -101,7 +101,13 @@ export class SessionManager {
     if (header === undefined) {
       throw new Error(`${absolutePath}：缺少 session 头部`);
     }
-    const cursor = recoverCheckpointCursor(entries, header.id);
+    let cursor: CheckpointCursor;
+    try {
+      cursor = recoverCheckpointCursor(entries, header.id);
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : String(cause);
+      throw new Error(`${absolutePath}：${detail}`, { cause });
+    }
     return new SessionManager(absolutePath, header, entries, ids, cursor);
   }
 
@@ -129,6 +135,12 @@ export class SessionManager {
   get checkpoint(): CheckpointEntry | undefined {
     const tail = this.entries.at(-1);
     return !this.failed && tail?.type === "checkpoint" ? { ...tail } : undefined;
+  }
+
+  get position(): RunPosition | undefined {
+    if (this.failed || !this.cursor) return undefined;
+    const position = runPosition(this.entries, this.cursor);
+    return position && { ...position };
   }
 
   private readableEntries(): SessionEntry[] {

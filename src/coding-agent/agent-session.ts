@@ -5,6 +5,7 @@ import type { ModelIO, ReplyMode } from "../models/model-io.ts";
 import type { Agent } from "../agent/agent.ts";
 import type { EventListener, RunResult } from "../agent/events.ts";
 import type { CheckpointEntry } from "./session-types.ts";
+import type { RunPosition } from "./checkpoint.ts";
 import { SessionManager } from "./session-manager.ts";
 
 export class AgentSession {
@@ -68,14 +69,20 @@ export class AgentSession {
   }
 
   get acceptsInput(): boolean {
-    return this.manager.checkpoint?.next === "input";
+    return this.manager.position?.next === "input";
   }
 
-  private async atBoundary<T>(work: (checkpoint: CheckpointEntry) => Promise<T>): Promise<T> {
+  get canResume(): boolean {
+    return this.manager.position?.next === "model";
+  }
+
+  private async atBoundary<T>(work: (position: RunPosition) => Promise<T>): Promise<T> {
     if (this.busy) throw new Error("会话正在运行或压缩，请等待当前操作结束。");
     this.busy = true;
     try {
-      return await work(this.checkpoint);
+      const position = this.manager.position;
+      if (!position) throw new Error(`会话没有可用的恢复位置：${this.filePath}`);
+      return await work(position);
     } finally {
       this.busy = false;
     }

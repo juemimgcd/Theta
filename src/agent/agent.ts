@@ -149,6 +149,7 @@ export class Agent {
     try {
       if (input !== undefined) {
         await this.emit({ type: "message_end", message: new HumanMessage(input) });
+        await this.emit({ type: "run_boundary", next: "model", turns: 0, maxTurns });
       }
       const result = await runLoop(
         prepareContext,

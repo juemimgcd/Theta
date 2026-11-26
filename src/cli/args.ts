@@ -10,7 +10,7 @@ export const usage = [
   'theta model [服务商/模型ID|env]',
   'theta providers | status',
   '全局选项：在命令前加 --theta-home <账号目录>。',
-  '交互命令包括 /login、/model、/status、/compact 和 /help。',
+  '交互命令包括 /login、/model、/status、/compact、/resume、/new 和 /help。',
 ].join("\n");
 
 export function isAccountCommand(name: string): boolean {
