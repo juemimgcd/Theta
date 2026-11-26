@@ -114,7 +114,7 @@ export async function runTask(command: TaskCommand, accounts: Accounts, cwd: str
           ui.setSession(session.filePath);
           ui.restore(session.getHistoryMessages());
         } else {
-          ui.say("输入任务开始对话。首次使用可输入 /login 登录，或用 /model 选择已配置的模型。");
+          ui.say("输入任务开始对话。用 /login 登录，或用 /model 选择模型。");
         }
         for (;;) {
           const input = await ui.read();
