@@ -1,12 +1,15 @@
 import { homedir } from "node:os";
 import { relative, sep } from "node:path";
-import type { BaseMessage } from "@langchain/core/messages";
+import { isAIMessage, isToolMessage, type AIMessage, type BaseMessage } from "@langchain/core/messages";
 import type { AuthEvent, AuthPrompt } from "@earendil-works/pi-ai";
 import {
-  CombinedAutocompleteProvider, Container, CURSOR_MARKER, Editor, getKeybindings, hyperlink, Input, Markdown, ProcessTerminal,
-  ScrollView, SelectList, Spacer, stripTerminalSequences, Text, TruncatedText, truncateToWidth, TuiAltScreen, VStack,
+  CombinedAutocompleteProvider, Container, CURSOR_MARKER, Editor, getKeybindings, hyperlink, Input, isKeyRelease, isKeyRepeat,
+  Markdown, matchesKey, ProcessTerminal,
+  ScrollView, SelectList, Spacer, Text, truncateToWidth, TuiAltScreen, VStack,
   type Component, type SelectItem,
 } from "@earendil-works/pi-tui";
+import metadata from "../../package.json" with { type: "json" };
+import { accent, display, markdownTheme, muted, selectTheme, SessionFooter, ToolBlock, userMessage } from "./tui-components.ts";
 import type { AccountUI } from "../coding-agent/accounts.ts";
 import type { AgentEvent } from "../agent/events.ts";
 import type { ToolHookCall } from "../agent/hooks.ts";
@@ -19,22 +22,6 @@ const commands = [
   { name: "help", description: "显示命令" }, { name: "exit", description: "退出 Theta" },
 ];
 export const commandHelp = commands.map(c => `/${c.name}  ${c.description}`).join("\n");
-
-const style = (code: string) => (text: string) => process.env.NO_COLOR !== undefined ? text : `\x1b[${code}m${text}\x1b[0m`;
-const accent = style("36;1");
-const muted = style("2");
-const selectTheme = { selectedPrefix: accent, selectedText: accent, description: muted, scrollInfo: muted, noMatch: muted };
-const markdownTheme = {
-  heading: style("1"), bold: style("1"), italic: style("3"), strikethrough: style("9"), underline: style("4"),
-  link: style("4;36"), linkUrl: muted, code: style("36"), codeBlock: (s: string) => s, codeBlockBorder: muted,
-  quote: (s: string) => s, quoteBorder: muted, hr: muted, listBullet: accent,
-};
-
-// Tool output, model text and paths are terminal input boundaries. Preserve line breaks,
-// but never let their escape sequences move the cursor or change terminal state.
-function display(text: string): string {
-  return stripTerminalSequences(text).replace(/\r\n?/g, "\n").replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "");
-}
 
 class SecretInput extends Input {
   override render(width: number): string[] {
@@ -85,11 +72,13 @@ export class TerminalUI {
   private transcript = new Container();
   private scroll = new ScrollView(this.transcript, { primary: true, follow: "end", scrollbar: "auto" });
   private controls = new Container();
-  private footer = new Text("", 1, 0);
+  private footer: SessionFooter;
   private editor = new Editor(this.screen, { borderColor: muted, selectList: selectTheme }, { paddingX: 1 });
-  private reply?: Text;
+  private reply?: Markdown;
   private replyText = "";
-  private usage = "";
+  private calls: AIMessage["tool_calls"] = [];
+  private pendingTools = new Map<string, ToolBlock>();
+  private toolsExpanded = false;
   private interrupted: () => void = () => {};
   private waiting = "正在处理";
   private sessionFile?: string;
@@ -98,11 +87,23 @@ export class TerminalUI {
   constructor(cwd: string, modelLabel: () => string) {
     this.modelLabel = modelLabel;
     this.editor.setAutocompleteProvider(new CombinedAutocompleteProvider(commands, cwd));
-    const path = cwd.startsWith(homedir() + sep) ? "~" + cwd.slice(homedir().length) : cwd;
-    const header = new TruncatedText(`${accent("Theta")}  ${display(path)}`, 1, 0);
-    this.screen.setLayoutRoot(new VStack([header,
+    const path = cwd === homedir() ? "~" : cwd.startsWith(homedir() + sep) ? "~" + cwd.slice(homedir().length) : cwd;
+    this.footer = new SessionFooter(path);
+    this.transcript.addChild(new Spacer(1));
+    this.transcript.addChild(new Text(`${accent("Theta")} ${muted(`v${metadata.version}`)}`, 1, 0));
+    this.transcript.addChild(new Spacer(1));
+    this.screen.setLayoutRoot(new VStack([
       { component: this.scroll, grow: 1, basis: 0, minSize: 1 }, this.controls, this.footer]));
     this.screen.addInputListener(data => {
+      if (matchesKey(data, "ctrl+o")) {
+        if (isKeyRelease(data) || isKeyRepeat(data)) return { consume: true };
+        this.toolsExpanded = !this.toolsExpanded;
+        for (const child of this.transcript.children) {
+          if (child instanceof ToolBlock) child.setExpanded(this.toolsExpanded);
+        }
+        this.screen.requestRender();
+        return { consume: true };
+      }
       const keys = getKeybindings();
       if (keys.matches(data, "tui.input.copy") || (keys.matches(data, "tui.select.cancel") && !this.editor.focused)) {
         this.interrupted();
@@ -116,7 +117,10 @@ export class TerminalUI {
   interrupt(): void { this.interrupted(); }
 
   setSession(path: string | undefined): void {
+    if (this.sessionFile === path) return;
+    this.finishRun();
     this.sessionFile = path;
+    this.footer.usage = "";
   }
 
   status(): string {
@@ -125,8 +129,16 @@ export class TerminalUI {
 
   restore(messages: BaseMessage[]): void {
     for (const message of messages) {
-      if (message.type === "human" || message.type === "ai") this.event({ type: "message_end", message });
-      if (message.type === "tool") this.say(`  ${message.name ?? "工具"}  ${truncateToWidth(display(message.text).split("\n")[0], 100)}`);
+      if (isToolMessage(message)) {
+        const tool = this.addTool(message.name ?? "工具", message.tool_call_id);
+        const text = message.text;
+        const status = message.status === "error" && text.startsWith("[工具状态：denied]\n")
+          ? "denied" : message.status ?? "success";
+        const output = status === "success" ? text : text.replace(/^\[工具状态：(denied|error)\]\n/, "");
+        tool.finish(status, output, this.toolsExpanded);
+      } else {
+        this.event({ type: "message_end", message });
+      }
     }
   }
 
@@ -136,56 +148,78 @@ export class TerminalUI {
   }
 
   log(message: string): void {
-    if (message.startsWith("[usage] ")) this.usage = message.slice(8);
-    else this.say(message);
+    // Usage is rendered from the AI message itself, including when replaying a saved session.
+    if (!message.startsWith("[usage] ")) this.say(message);
+  }
+
+  private addTool(name: string, id: string, args: unknown = this.calls?.find(call => call.id === id)?.args): ToolBlock {
+    const block = new ToolBlock(name, args);
+    this.transcript.addChild(new Spacer(1));
+    this.transcript.addChild(block);
+    return block;
+  }
+
+  private updateReply(text: string): void {
+    if (!this.reply) {
+      this.transcript.addChild(new Spacer(1));
+      this.reply = new Markdown("", 1, 0, markdownTheme);
+      this.transcript.addChild(this.reply);
+    }
+    this.reply.setText(display(text));
+  }
+
+  private finishRun(): void {
+    for (const tool of this.pendingTools.values()) {
+      tool.finish("unconfirmed", "", this.toolsExpanded);
+    }
+    this.pendingTools.clear();
+    this.calls = [];
+    this.reply = undefined;
+    this.replyText = "";
   }
 
   event(event: AgentEvent): void {
     switch (event.type) {
       case "text_delta":
-        if (!this.reply) {
-          this.transcript.addChild(new Text(accent("Theta"), 1, 0));
-          this.reply = new Text("", 1, 0);
-          this.transcript.addChild(this.reply);
-        }
         this.replyText += event.text;
-        this.reply.setText(display(this.replyText));
+        this.updateReply(this.replyText);
         break;
-      case "message_end":
-        if (event.message.type === "human") {
+      case "message_end": {
+        const message = event.message;
+        if (message.type === "human") {
           this.transcript.addChild(new Spacer(1));
-          this.transcript.addChild(new Text(`${accent("›")} ${display(event.message.text)}`, 1, 0));
-        } else if (event.message.type === "ai") {
-          if (this.reply) this.transcript.removeChild(this.reply);
-          if (event.message.text) {
-            if (!this.reply) this.transcript.addChild(new Text(accent("Theta"), 1, 0));
-            this.transcript.addChild(new Markdown(display(event.message.text), 1, 0, markdownTheme));
-          }
+          this.transcript.addChild(userMessage(message.text));
+        } else if (isAIMessage(message)) {
+          if (message.text || this.reply) this.updateReply(message.text);
           this.reply = undefined;
           this.replyText = "";
+          this.calls = message.tool_calls;
+          const usage = message.usage_metadata;
+          if (usage) this.footer.usage = `↑ ${usage.input_tokens}  ↓ ${usage.output_tokens} tokens`;
         }
         break;
+      }
       case "tool_start": this.busy(`调用 ${event.name}`); break;
       case "tool_end": {
-        const status = { success: "完成", denied: "已拒绝", error: "失败" }[event.status];
-        const detail = display(event.raw).trim().split("\n").slice(0, 2).join("  ");
-        this.say(`  ${event.name} · ${status}  ${truncateToWidth(detail, 100)}`);
+        const tool = this.pendingTools.get(event.callId) ?? this.addTool(event.name, event.callId);
+        tool.finish(event.status, event.raw, this.toolsExpanded);
+        this.pendingTools.delete(event.callId);
         this.busy("等待模型");
         break;
       }
       case "agent_end":
-        this.reply = undefined;
-        this.replyText = "";
+        this.finishRun();
         break;
     }
     this.screen.requestRender();
   }
 
-  private show(component: Component | null, hint: string): void {
+  private show(component: Component | null, hint = ""): void {
     this.controls.clear();
     if (component) this.controls.addChild(component);
     this.screen.setFocus(component);
-    this.footer.setText(`${display(this.modelLabel())}  ·  ${hint}`);
+    if (hint) this.controls.addChild(new Text(muted(hint), 1, 0));
+    this.footer.model = display(this.modelLabel()).replace(/\n/g, " ");
     this.screen.requestRender();
   }
 
@@ -196,7 +230,7 @@ export class TerminalUI {
   }
 
   read(): Promise<string> {
-    this.show(this.editor, [this.usage, "Enter 发送", "Ctrl+J 换行", "/help"].filter(Boolean).join("  ·  "));
+    this.show(this.editor, "Enter 发送 · Ctrl+J 换行 · Ctrl+O 工具详情 · /help 命令");
     return new Promise(resolve => {
       this.interrupted = () => resolve("/exit");
       this.editor.onSubmit = text => {
@@ -271,11 +305,12 @@ export class TerminalUI {
   }
 
   async approve(call: ToolHookCall, signal: AbortSignal): Promise<string | void> {
-    if (call.name === "read") {
-      this.say(`  read  ${JSON.stringify(call.args)}`);
-      return;
-    }
-    this.say(`${call.name}\n${JSON.stringify(call.args, null, 2)}`);
+    const tool = this.addTool(call.name, call.id, call.args);
+    this.pendingTools.set(call.id, tool);
+    tool.setExpanded(this.toolsExpanded);
+    this.screen.requestRender();
+    if (call.name === "read") return;
+    this.scroll.scrollToEnd();
     const value = await this.ask({ type: "approval", message: `允许执行 ${call.name}？`,
       options: [{ id: "no", label: "拒绝本次" }, { id: "yes", label: "允许本次" }] }, signal);
     if (value !== "yes") return "用户拒绝了本次工具调用";
