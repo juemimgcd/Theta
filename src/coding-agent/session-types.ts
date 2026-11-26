@@ -22,6 +22,7 @@ export const compactionEntrySchema = z.object({
   timestamp: z.iso.datetime(),
   summary: z.string().trim().min(1).max(12000),
   firstKeptEntryId: z.uuid(),
+  taskEntryId: z.uuid().optional(),
   tokensBefore: z.number().int().nonnegative(),
   tokensAfter: z.number().int().nonnegative(),
 });

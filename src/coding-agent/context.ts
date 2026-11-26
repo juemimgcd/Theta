@@ -34,30 +34,46 @@ export function projectContext(entries: SessionEntry[]): ContextParts {
   }
   validateSessionMessages(entries);
   const messages: MessageEntry[] = [];
-  const userOffsets = new Map<string, number>();
+  const offsets = new Map<string, number>();
+  let latestUser: MessageEntry | undefined;
+  let retainedTask: MessageEntry | undefined;
   let recentStart = 0;
   let summary: string | undefined;
 
   for (const entry of entries) {
     if (entry.type === "message") {
       if (entry.id !== first.id) {
-        if (entry.message.type === "human") userOffsets.set(entry.id, messages.length);
+        if (entry.message.type === "human") latestUser = entry;
+        offsets.set(entry.id, messages.length);
         messages.push(entry);
       }
       continue;
     }
 
     if (entry.type === "compaction") {
-      const index = userOffsets.get(entry.firstKeptEntryId);
+      const index = offsets.get(entry.firstKeptEntryId);
       if (index === undefined || index <= recentStart) {
-        throw new Error(`压缩起点不存在、没有推进或不在用户任务边界：${entry.id}`);
+        throw new Error(`压缩起点不存在或没有推进：${entry.id}`);
       }
-      // 合法的 human 消息本身意味着此前没有悬空调用。
+      const kept = messages[index].message;
+      if (entry.taskEntryId === undefined) {
+        if (kept.type !== "human") throw new Error(`压缩起点必须是用户任务边界：${entry.id}`);
+        retainedTask = undefined;
+      } else {
+        // A split may only retain a complete tool round in the current task.
+        if (latestUser?.id !== entry.taskEntryId || offsets.get(entry.taskEntryId)! >= index ||
+            kept.type !== "ai" || !kept.data.tool_calls.length || messages[index - 1].message.type !== "tool") {
+          throw new Error(`压缩起点必须位于当前任务的完整工具轮次之间：${entry.id}`);
+        }
+        retainedTask = latestUser;
+      }
       recentStart = index;
       summary = entry.summary;
     }
   }
-  return { system: first.message, summary, recent: messages.slice(recentStart) };
+  const recent = messages.slice(recentStart);
+  if (retainedTask) recent.unshift(retainedTask);
+  return { system: first.message, summary, recent };
 }
 
 export function buildContext(entries: SessionEntry[]): BaseMessage[] {
