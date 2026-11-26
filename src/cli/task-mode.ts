@@ -57,7 +57,10 @@ export async function runTask(command: TaskCommand, accounts: Accounts, cwd: str
       }
     } catch (cause) {
       const session = sessions.current;
-      if (singleRun && session?.canResume) log(`可用 theta --resume "${session.filePath}" 继续原任务。`);
+      if (singleRun && session?.canResume) {
+        log("用 theta --resume 可继续当前目录最近写入的会话。要指定本次任务，请使用 theta --resume <会话文件>。");
+        log(`会话文件：${session.filePath}`);
+      }
       if (singleRun && !active.signal.aborted) throw cause;
       log(active.signal.aborted ? "本次操作已取消。" : cause instanceof Error ? cause.message : String(cause));
       if (singleRun) process.exitCode = 130;
