@@ -17,6 +17,7 @@ Alpha 是学习 pi 时写的第一个 demo，用来理解模型如何调用工�
 ```sh
 bun install --frozen-lockfile --ignore-scripts
 bun run check
+bun test
 bun link
 theta --help
 ```
@@ -139,13 +140,13 @@ flowchart TD
 
 | 章节 | 在 Theta 中追踪的调用 |
 | --- | --- |
-| Step 1 · 模型与循环 | [Agent](src/agent.ts) 启动 [runLoop](src/agent-loop.ts)，[ModelIO](src/model-io.ts) 聚合流式消息，[protocol](src/protocol.ts) 检查工具调用及配对 |
-| Step 2 · 工具 | [dispatch](src/dispatch.ts) 查找工具，按 [工具契约](src/tools.ts) 校验参数，串行执行并返回 ToolMessage |
-| Step 3 · Hook 与事件 | [hooks](src/hooks.ts) 定义五个策略位置，[events](src/events.ts) 定义 CLI 与会话层订阅的通知 |
-| Step 4 · 会话 | [AgentSession](src/agent-session.ts) 等待消息保存，[SessionManager](src/session-manager.ts) 追加 JSONL，[codec](src/message-codec.ts) 恢复 LangChain 消息实例 |
-| Step 5 · 上下文 | [buildContext](src/context.ts) 根据消息与压缩记录构造本轮请求，beforeModel 仅调整请求副本 |
-| Step 6 · 压缩 | [budget](src/budget.ts) 估算输入，[compact](src/compact.ts) 汇总最近任务之前的完整任务，等待保存后重建上下文 |
-| Step 7 · 检查点 | [checkpoint](src/checkpoint.ts) 检查历史位置、工具配对和剩余轮数，[CLI](src/cli.ts) 分别进入 prompt 或 resume |
+| Step 1 · 模型与循环 | [Agent](src/agent/agent.ts) 启动 [runLoop](src/agent/agent-loop.ts)，模型适配器按 [ModelIO 契约](src/models/model-io.ts) 聚合流式消息，[protocol](src/agent/protocol.ts) 检查工具调用及配对 |
+| Step 2 · 工具 | [dispatch](src/agent/dispatch.ts) 查找工具，按 [工具契约](src/agent/tools.ts) 校验参数，串行执行并返回 ToolMessage |
+| Step 3 · Hook 与事件 | [hooks](src/agent/hooks.ts) 定义五个策略位置，[events](src/agent/events.ts) 定义 CLI 与会话层订阅的通知 |
+| Step 4 · 会话 | [AgentSession](src/coding-agent/agent-session.ts) 等待消息保存，[SessionManager](src/coding-agent/session-manager.ts) 追加 JSONL，[codec](src/coding-agent/message-codec.ts) 恢复 LangChain 消息实例 |
+| Step 5 · 上下文 | [SessionManager.getContextSnapshot](src/coding-agent/session-manager.ts) 选出并复制系统消息、当前摘要和近期记录。[contextMessages](src/coding-agent/context.ts) 将快照转换为本轮消息，供预算估算和模型请求共用 |
+| Step 6 · 压缩 | [prepareRequestContext](src/coding-agent/compact.ts) 汇总最近任务之前的完整任务，[AgentSession](src/coding-agent/agent-session.ts) 等压缩记录保存后才将摘要和近期消息交给执行循环 |
+| Step 7 · 检查点 | [checkpoint](src/coding-agent/checkpoint.ts) 检查历史位置、工具配对和剩余轮数，[终端任务入口](src/cli/task-mode.ts) 分别进入 prompt 或 resume |
 
 ## 运行行为
 

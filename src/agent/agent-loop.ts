@@ -4,7 +4,7 @@ import { executeTool } from "./dispatch.ts";
 import type { EmitEvent, RunResult } from "./events.ts";
 import { copyMessages } from "./hooks.ts";
 import type { Hook, TurnInfo } from "./hooks.ts";
-import type { ModelIO, ReplyMode } from "./model-io.ts";
+import type { ModelIO, ReplyMode } from "../models/model-io.ts";
 import { responseCalls, validateHistory } from "./protocol.ts";
 import type { Tool } from "./tools.ts";
 
@@ -12,7 +12,7 @@ export type PrepareContext = (signal: AbortSignal) => Promise<BaseMessage[]>;
 
 export async function runLoop(
   prepareContext: PrepareContext,
-  model: ModelIO,
+  model: Pick<ModelIO, "request">,
   tools: readonly Tool[],
   hooks: readonly Hook[],
   cwd: string,
@@ -72,6 +72,7 @@ export async function runLoop(
       toolCount: calls.length,
       hasAnswer: calls.length === 0,
     };
+
     await emit({ type: "turn_end", ...info });
     if (signal.aborted) {
       // All tool results have been recorded, including calls skipped after cancellation.

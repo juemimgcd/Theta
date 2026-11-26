@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { z } from "zod";
-import { defineTool } from "../tools.ts";
+import { defineTool } from "../../agent/tools.ts";
 
 export const writeTool = defineTool({
   name: "write",

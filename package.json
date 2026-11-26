@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "bin": { "theta": "./src/cli.ts" },
-  "scripts": { "start": "bun src/cli.ts", "check": "tsc --noEmit" },
+  "scripts": { "start": "bun src/cli.ts", "check": "tsc --noEmit", "test": "bun test" },
   "dependencies": {
     "@earendil-works/pi-ai": "1.5.2",
     "@earendil-works/pi-coding-agent": "1.5.2",

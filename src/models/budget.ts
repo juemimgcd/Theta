@@ -1,7 +1,8 @@
+import type { ModelIO } from "./model-io.ts";
 import { Buffer } from "node:buffer";
 import type { BaseMessage } from "@langchain/core/messages";
 import { z } from "zod";
-import type { Tool } from "./tools.ts";
+import type { Tool } from "../agent/tools.ts";
 
 export type Budget = {
   contextWindow: number;
@@ -26,10 +27,12 @@ export function estimateMessages(messages: BaseMessage[]): number {
   return total;
 }
 
-export function createBudget(tools: readonly Tool[], model?: { contextWindow: number; maxTokens: number }): Budget {
-  const configuredWindow = z.coerce.number().int().min(8192).parse(
-    process.env.THETA_CONTEXT_WINDOW ?? process.env.ALPHA_CONTEXT_WINDOW ?? "32768",
-  );
+export function createBudget(
+  tools: readonly Tool[],
+  model?: { contextWindow: number; maxTokens: number },
+  settings: { contextWindow?: number; compactAt?: number } = {},
+): Budget {
+  const configuredWindow = settings.contextWindow ?? 32768;
   const contextWindow = Math.min(configuredWindow, model?.contextWindow ?? configuredWindow);
   const outputTokens = model ? Math.min(4096, model.maxTokens, Math.floor(contextWindow / 3)) : 4096;
   const summaryOutputTokens = Math.min(2048, outputTokens);
@@ -44,11 +47,30 @@ export function createBudget(tools: readonly Tool[], model?: { contextWindow: nu
   if (messageLimit < 1024) {
     throw new Error("工具声明和输出预留后，消息预算不足");
   }
-  const compactAt = z.coerce.number().int().positive().max(messageLimit).parse(
-    process.env.THETA_COMPACT_AT ?? process.env.ALPHA_COMPACT_AT ?? String(Math.floor(messageLimit * 0.75)),
-  );
+  const compactAt = settings.compactAt ?? Math.floor(messageLimit * 0.75);
+  if (compactAt > messageLimit) throw new Error(`压缩阈值 ${compactAt} 超出消息预算 ${messageLimit}`);
   return {
     contextWindow, outputTokens, summaryOutputTokens, safetyTokens,
     toolTokens, messageLimit, compactAt,
+  };
+}
+
+export function withBudget(model: ModelIO, budget: Budget, debug: boolean, log: (text: string) => void): ModelIO {
+  let requestNumber = 0;
+  return {
+    async request(messages, signal, onText) {
+      const size = estimateMessages(messages);
+      if (size > budget.messageLimit) throw new Error(`主请求估算 ${size} tokens，超出消息预算 ${budget.messageLimit}`);
+      if (debug) log(`[context] 第 ${++requestNumber} 次请求，${messages.length} 条消息\n${JSON.stringify(messages.map(m => m.toDict()), null, 2)}`);
+      return model.request(messages, signal, onText);
+    },
+    async summarize(messages, signal) {
+      const limit = budget.contextWindow - budget.summaryOutputTokens - budget.safetyTokens;
+      const size = estimateMessages(messages);
+      if (size > limit) throw new Error(`摘要输入估算 ${size} tokens，超出预算 ${limit}`);
+      const result = await model.summarize(messages, signal);
+      if (debug) log(`[summary usage] ${JSON.stringify(result.usage_metadata)}`);
+      return result;
+    },
   };
 }

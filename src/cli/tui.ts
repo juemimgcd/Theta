@@ -7,9 +7,9 @@ import {
   ScrollView, SelectList, Spacer, stripTerminalSequences, Text, TruncatedText, truncateToWidth, TuiAltScreen, VStack,
   type Component, type SelectItem,
 } from "@earendil-works/pi-tui";
-import type { AccountUI } from "./accounts.ts";
-import type { AgentEvent } from "./events.ts";
-import type { ToolHookCall } from "./hooks.ts";
+import type { AccountUI } from "../coding-agent/accounts.ts";
+import type { AgentEvent } from "../agent/events.ts";
+import type { ToolHookCall } from "../agent/hooks.ts";
 
 const commands = [
   { name: "login", description: "登录服务商" }, { name: "model", description: "切换模型" },

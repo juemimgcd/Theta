@@ -1,19 +1,14 @@
-import { AIMessage, type AIMessageChunk, type BaseMessage } from "@langchain/core/messages";
+import { AIMessage, type AIMessageChunk } from "@langchain/core/messages";
 import { ChatOpenAI } from "@langchain/openai";
 import { z } from "zod";
-import { estimateMessages, type Budget } from "./budget.ts";
-import type { Tool } from "./tools.ts";
+import type { Budget } from "./budget.ts";
+import type { Tool } from "../agent/tools.ts";
 
-export type ReplyMode = "stream" | "complete";
-
-export type ModelIO = {
-  request(messages: BaseMessage[], signal: AbortSignal, onText?: (delta: string) => Promise<void>): Promise<AIMessage>;
-  summarize(messages: BaseMessage[], signal: AbortSignal): Promise<AIMessage>;
-};
+import type { ModelIO } from "./model-io.ts";
 
 const argumentObject = z.record(z.string(), z.unknown());
 
-export function createModelIO(
+export function createOpenAIModel(
   modelName: string, apiKey: string, tools: readonly Tool[], budget: Budget, baseURL?: string,
 ): ModelIO {
   const options = {
@@ -63,27 +58,6 @@ export function createModelIO(
 
     async summarize(messages, signal) {
       return summarizer.invoke(messages, { signal });
-    },
-  };
-}
-
-export function withBudget(model: ModelIO, budget: Budget, log: (text: string) => void): ModelIO {
-  const debug = (process.env.THETA_DEBUG_CONTEXT ?? process.env.ALPHA_DEBUG_CONTEXT) === "1";
-  let requestNumber = 0;
-  return {
-    async request(messages, signal, onText) {
-      const size = estimateMessages(messages);
-      if (size > budget.messageLimit) throw new Error(`主请求估算 ${size} tokens，超出消息预算 ${budget.messageLimit}`);
-      if (debug) log(`[context] 第 ${++requestNumber} 次请求，${messages.length} 条消息\n${JSON.stringify(messages.map(m => m.toDict()), null, 2)}`);
-      return model.request(messages, signal, onText);
-    },
-    async summarize(messages, signal) {
-      const limit = budget.contextWindow - budget.summaryOutputTokens - budget.safetyTokens;
-      const size = estimateMessages(messages);
-      if (size > limit) throw new Error(`摘要输入估算 ${size} tokens，超出预算 ${limit}`);
-      const result = await model.summarize(messages, signal);
-      if (debug) log(`[summary usage] ${JSON.stringify(result.usage_metadata)}`);
-      return result;
     },
   };
 }

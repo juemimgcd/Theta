@@ -1,10 +1,10 @@
-import type { AssistantMessage, Message, Tool as PiTool } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Message, Model, Tool as PiTool } from "@earendil-works/pi-ai";
 import { AIMessage, HumanMessage, SystemMessage, ToolMessage, type BaseMessage } from "@langchain/core/messages";
 import { z } from "zod";
-import type { Connection } from "./accounts.ts";
+import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { ModelIO } from "./model-io.ts";
 import type { Budget } from "./budget.ts";
-import type { Tool } from "./tools.ts";
+import type { Tool } from "../agent/tools.ts";
 
 // Text and tool arguments already live in Theta's messages. Keep their order and the
 // provider signatures separately so resumed tool calls can replay signed reasoning.
@@ -54,7 +54,7 @@ function history(message: BaseMessage): Message {
 }
 
 export function createCatalogIO(
-  { runtime, model }: Extract<Connection, { type: "catalog" }>, tools: readonly Tool[], budget: Budget,
+  { runtime, model }: { runtime: ModelRuntime; model: Model<Api> }, tools: readonly Tool[], budget: Budget,
 ): ModelIO {
   const declarations = tools.map(t => ({ name: t.name, description: t.description, parameters: z.toJSONSchema(t.schema) }));
   async function request(

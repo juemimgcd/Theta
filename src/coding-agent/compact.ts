@@ -1,29 +1,29 @@
 import { randomUUID } from "node:crypto";
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
-import { estimateMessages } from "./budget.ts";
-import type { Budget } from "./budget.ts";
-import { buildContext, projectContext } from "./context.ts";
-import type { ModelIO } from "./model-io.ts";
-import { responseCalls } from "./protocol.ts";
+import { HumanMessage, SystemMessage, type BaseMessage } from "@langchain/core/messages";
+import { estimateMessages } from "../models/budget.ts";
+import type { Budget } from "../models/budget.ts";
+import { contextMessages, type ContextParts } from "./context.ts";
+import type { ModelIO } from "../models/model-io.ts";
+import { responseCalls } from "../agent/protocol.ts";
 import { compactionEntrySchema } from "./session-types.ts";
-import type { CompactionEntry, SessionEntry } from "./session-types.ts";
+import type { CompactionEntry } from "./session-types.ts";
 
-export async function prepareCompaction(
-  entries: SessionEntry[],
-  model: ModelIO,
+export async function prepareRequestContext(
+  parts: ContextParts,
+  model: Pick<ModelIO, "summarize">,
   budget: Budget,
   signal: AbortSignal,
   trigger: "budget" | "manual" = "budget",
   log: (message: string) => void = console.error,
-): Promise<CompactionEntry | undefined> {
+): Promise<{ messages: BaseMessage[]; compaction?: CompactionEntry }> {
   signal.throwIfAborted();
-  const before = estimateMessages(buildContext(entries));
+  const messages = contextMessages(parts);
+  const before = estimateMessages(messages);
   if (trigger === "budget" && before < budget.compactAt) {
-    return undefined;
+    return { messages };
   }
 
   try {
-    const parts = projectContext(entries);
     let cut = -1;
     // 保留最近一次用户输入及其所有模型、工具消息。
     for (let index = 0; index < parts.recent.length; index += 1) {
@@ -32,7 +32,7 @@ export async function prepareCompaction(
       }
     }
     if (cut <= 0) {
-      if (trigger === "manual" && before <= budget.messageLimit) return undefined;
+      if (trigger === "manual" && before <= budget.messageLimit) return { messages };
       throw new Error(`没有可压缩的完整旧任务，当前任务必须完整保留（估算 ${before} tokens，消息预算 ${budget.messageLimit}）。`);
     }
     const transcript = parts.recent.slice(0, cut).map((entry) => entry.message);
@@ -54,21 +54,22 @@ export async function prepareCompaction(
     if (calls.length !== 0 || response.response_metadata.finish_reason !== "stop") {
       throw new Error("摘要必须是 finish_reason=stop 的完整文本，不能包含工具调用");
     }
-    let entry = compactionEntrySchema.parse({
+    const summary = response.text.trim();
+    const compacted = contextMessages({ system: parts.system, summary, recent: parts.recent.slice(cut) });
+    const after = estimateMessages(compacted);
+    const entry = compactionEntrySchema.parse({
       type: "compaction",
       id: randomUUID(),
       timestamp: new Date().toISOString(),
-      summary: response.text.trim(),
+      summary,
       firstKeptEntryId: parts.recent[cut].id,
       tokensBefore: before,
-      tokensAfter: 0,
+      tokensAfter: after,
     });
-    const after = estimateMessages(buildContext([...entries, entry]));
     if (after >= before || after > budget.messageLimit) {
       throw new Error("摘要没有缩短上下文，或摘要加近期消息仍超过消息预算");
     }
-    entry = { ...entry, tokensAfter: after };
-    return entry;
+    return { messages: compacted, compaction: entry };
   } catch (error: unknown) {
     signal.throwIfAborted();
     if (trigger === "manual" || before > budget.messageLimit) {
@@ -76,6 +77,6 @@ export async function prepareCompaction(
     }
     const detail = error instanceof Error ? error.message : String(error);
     log(`[compact] 本次未压缩，原上下文仍在估算预算内：${detail}`);
-    return undefined;
+    return { messages };
   }
 }

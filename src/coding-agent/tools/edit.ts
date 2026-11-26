@@ -1,7 +1,7 @@
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { z } from "zod";
-import { defineTool } from "../tools.ts";
+import { defineTool } from "../../agent/tools.ts";
 
 export const editTool = defineTool({
   name: "edit",
