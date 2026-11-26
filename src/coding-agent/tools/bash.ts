@@ -6,10 +6,10 @@ import { defineTool, truncateOutput } from "../../agent/tools.ts";
 
 export const bashTool = defineTool({
   name: "bash",
-  description: "在工作目录执行短时非交互 bash 命令，返回输出和退出状态。不要启动后台服务。",
+  description: "Run a short, non-interactive bash command in the working directory and return its output and exit status. Do not start background services.",
   schema: z.object({
     command: z.string().min(1).max(10_000),
-    timeoutMs: z.number().int().min(1).max(60_000).optional().describe("默认 10000 毫秒"),
+    timeoutMs: z.number().int().min(1).max(60_000).optional().describe("Timeout in milliseconds, default 10000"),
   }),
   async execute({ command, timeoutMs = 10_000 }, cwd, signal) {
     const child = spawn("/bin/bash", ["--noprofile", "--norc", "-c", command], {

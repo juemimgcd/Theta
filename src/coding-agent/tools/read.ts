@@ -8,9 +8,9 @@ import { TOOL_RESULT_LIMIT } from "../coding-policy.ts";
 export function createReadTool(credentialPaths: readonly string[]) {
   return defineTool({
     name: "read",
-    description: "按行读取不超过 1 MB 的 UTF-8 文本文件。offset 从 1 开始，limit 为行数；按结果中的 offset 继续读取。",
+    description: "Read lines from a UTF-8 text file up to 1 MB. The offset is 1-based and limit counts lines. Continue at the offset in the result.",
     schema: z.object({
-      path: z.string().min(1).describe("相对工作目录的路径或绝对路径"),
+      path: z.string().min(1).describe("An absolute path or a path relative to the working directory"),
       offset: z.number().int().positive().optional(),
       limit: z.number().int().positive().optional(),
     }),

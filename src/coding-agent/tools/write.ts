@@ -5,10 +5,10 @@ import { defineTool } from "../../agent/tools.ts";
 
 export const writeTool = defineTool({
   name: "write",
-  description: "创建或完整覆盖 UTF-8 文本文件，自动创建父目录。局部修改请使用 edit。",
+  description: "Create or overwrite a UTF-8 text file, creating parent directories as needed. Use edit for partial changes.",
   schema: z.object({
-    path: z.string().min(1).describe("目标文件路径"),
-    content: z.string().max(100_000).describe("文件的全部内容，最多 100000 个代码单元"),
+    path: z.string().min(1).describe("Path to the target file"),
+    content: z.string().max(100_000).describe("Full file contents, up to 100,000 UTF-16 code units"),
   }),
   async execute(args, cwd, signal) {
     const fullPath = resolve(cwd, args.path);

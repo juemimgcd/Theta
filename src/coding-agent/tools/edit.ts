@@ -5,11 +5,11 @@ import { defineTool } from "../../agent/tools.ts";
 
 export const editTool = defineTool({
   name: "edit",
-  description: "精确替换小型 UTF-8 文件中的一段文字。oldText 必须非空且仅出现一次。请先 read。",
+  description: "Replace an exact passage in a small UTF-8 file. Read it first. oldText must be nonempty and occur exactly once.",
   schema: z.object({
-    path: z.string().min(1).describe("已有文件路径"),
-    oldText: z.string().min(1).max(100_000).describe("要替换的精确旧文字"),
-    newText: z.string().max(100_000).describe("新文字；空字符串表示删除该片段"),
+    path: z.string().min(1).describe("Path to the existing file"),
+    oldText: z.string().min(1).max(100_000).describe("Exact text to replace"),
+    newText: z.string().max(100_000).describe("Replacement text. An empty string deletes the passage."),
   }),
   async execute(args, cwd, signal) {
     const fullPath = resolve(cwd, args.path);
