@@ -44,7 +44,7 @@ export async function runTask(command: TaskCommand, accounts: Accounts, cwd: str
       }
       active.signal.throwIfAborted();
       if (input === "/compact") {
-        if (!await session.compact(active.signal)) log("[compact] 没有可压缩的完整旧任务。");
+        if (!await session.compact(active.signal)) log("[compact] 没有可压缩的早期任务或工具轮次。");
         return;
       }
       const mode = singleRun ? "complete" : "stream";

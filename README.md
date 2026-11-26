@@ -131,11 +131,11 @@ flowchart TD
 
 **磁盘上保存了什么？** 会话位于启动目录下的 `.theta/sessions/<会话 ID>.jsonl`。Step 7 的 v3 格式按行追加，头部记录实际工作目录，首条消息保存系统指令。工具结果通过调用 ID 配对。检查点保存 `afterEntryId`、`next`、`turns` 和 `maxTurns`。一个会话文件由一个进程写入。
 
-**下一次请求会发送什么？** 首次压缩前，Theta 根据当前会话路径组装历史消息。执行 `/compact` 或接近上下文预算时，它将较早的完整交互汇总成摘要，追加一条压缩记录，并记下从哪条消息起保留原文。下一次请求携带系统指令、摘要和近期原文。切分点需要保留工具调用与结果的配对，以免模型只看到一次文件写入请求，却看不到写入结果。旧记录仍留在磁盘上，便于回看原始输出。
+**下一次请求会发送什么？** 首次压缩前，Theta 根据当前会话路径组装历史消息。执行 `/compact` 或接近上下文预算时，它将较早的完整交互汇总成摘要，追加一条压缩记录，并记下从哪条消息起保留原文。下一次请求携带系统指令、摘要和近期原文。当最近一次任务本身达到压缩阈值时，Theta 也可以汇总该任务中已完成的较早工具轮次。记录中的 `taskEntryId` 指向原始用户输入，`firstKeptEntryId` 指向保留的工具轮次。重启后仍能看到原始目标和最近一整批工具调用及结果。旧记录仍留在磁盘上，便于回看原始输出。
 
 **取消或恢复意味着什么？** 用户输入落盘后，Theta 保存第 0 轮的等待模型检查点。首轮断线后可用 `--resume` 重试同一份输入。旧 v3 文件若在等待输入的检查点后只留下用户消息，也能继续。独立落盘的有效摘要只更新上下文，恢复时沿用原有轮数。例如，第 1 轮的写入结果已保存，文件末尾是 `model 1/8` 检查点。此时退出，`--resume <文件>` 会带着该结果发起第 2 次请求。若进程在写入调用落盘后、结果保存前退出，加载器会报告末条记录并拒绝自动继续。此时可在新会话中读取目标文件核实。在 TUI 工具确认时按 `Esc` 或 `Ctrl+C` 会取消任务。Theta 保存本轮结果和等待输入的检查点，然后在原会话提示输入。
 
-预算按序列化后的 UTF-8 字节数估算。扣除工具声明、输出和余量后，消息达到可用预算的 75% 时尝试压缩。有可汇总的早期交互、且摘要能缩短上下文时，Theta 才追加压缩记录。单批近期消息本身超过预算时，CLI 会报告原因。
+预算按序列化后的 UTF-8 字节数估算。扣除工具声明、输出和余量后，消息达到可用预算的 75% 时尝试压缩。有可汇总的早期任务或完整工具轮次、且摘要能缩短上下文时，Theta 才追加压缩记录。单批近期消息本身超过预算时，CLI 会报告原因。
 
 ## 按 Alpha 的七章阅读源码
 
@@ -146,7 +146,7 @@ flowchart TD
 | Step 3 · Hook 与事件 | [hooks](src/agent/hooks.ts) 定义五个策略位置，[events](src/agent/events.ts) 定义 CLI 与会话层订阅的通知 |
 | Step 4 · 会话 | [AgentSession](src/coding-agent/agent-session.ts) 等待消息保存，[SessionManager](src/coding-agent/session-manager.ts) 追加 JSONL，[codec](src/coding-agent/message-codec.ts) 恢复 LangChain 消息实例 |
 | Step 5 · 上下文 | [SessionManager.getContextSnapshot](src/coding-agent/session-manager.ts) 选出并复制系统消息、当前摘要和近期记录。[contextMessages](src/coding-agent/context.ts) 将快照转换为本轮消息，供预算估算和模型请求共用 |
-| Step 6 · 压缩 | [prepareRequestContext](src/coding-agent/compact.ts) 汇总最近任务之前的完整任务，[AgentSession](src/coding-agent/agent-session.ts) 等压缩记录保存后才将摘要和近期消息交给执行循环 |
+| Step 6 · 压缩 | [prepareRequestContext](src/coding-agent/compact.ts) 汇总旧任务或当前任务内较早的完整工具轮次，[AgentSession](src/coding-agent/agent-session.ts) 等压缩记录保存后才将摘要和近期消息交给执行循环 |
 | Step 7 · 检查点 | [checkpoint](src/coding-agent/checkpoint.ts) 检查历史位置、工具配对和剩余轮数，[终端任务入口](src/cli/task-mode.ts) 分别进入 prompt 或 resume |
 
 ## 运行行为

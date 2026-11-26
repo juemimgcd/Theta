@@ -24,16 +24,27 @@ export async function prepareRequestContext(
   }
 
   try {
-    let cut = -1;
-    // 保留最近一次用户输入及其所有模型、工具消息。
-    for (let index = 0; index < parts.recent.length; index += 1) {
-      if (parts.recent[index].message.type === "human") {
-        cut = index;
+    const taskStart = parts.recent.findLastIndex(entry => entry.message.type === "human");
+    let cut = taskStart;
+    let retained = parts.recent.slice(taskStart);
+    let taskEntryId: string | undefined;
+    // Prefer the whole current task. Keep its goal and newest tool round if it alone fills the budget.
+    if (taskStart >= 0 && (cut === 0 || estimateMessages(contextMessages({
+      system: parts.system, summary: undefined, recent: retained,
+    })) >= budget.compactAt)) {
+      for (let i = parts.recent.length - 1; i > taskStart + 1; i--) {
+        const message = parts.recent[i].message;
+        if (message.type === "ai" && message.data.tool_calls.length && parts.recent[i - 1].message.type === "tool") {
+          cut = i;
+          taskEntryId = parts.recent[taskStart].id;
+          retained = [parts.recent[taskStart], ...parts.recent.slice(i)];
+          break;
+        }
       }
     }
     if (cut <= 0) {
       if (trigger === "manual" && before <= budget.messageLimit) return { messages };
-      throw new Error(`没有可压缩的完整旧任务，当前任务必须完整保留（估算 ${before} tokens，消息预算 ${budget.messageLimit}）。`);
+      throw new Error(`没有可压缩的旧任务或更早的完整工具轮次（估算 ${before} tokens，消息预算 ${budget.messageLimit}）。`);
     }
     const transcript = parts.recent.slice(0, cut).map((entry) => entry.message);
     const input = [
@@ -55,7 +66,7 @@ export async function prepareRequestContext(
       throw new Error("摘要必须是 finish_reason=stop 的完整文本，不能包含工具调用");
     }
     const summary = response.text.trim();
-    const compacted = contextMessages({ system: parts.system, summary, recent: parts.recent.slice(cut) });
+    const compacted = contextMessages({ system: parts.system, summary, recent: retained });
     const after = estimateMessages(compacted);
     const entry = compactionEntrySchema.parse({
       type: "compaction",
@@ -63,6 +74,7 @@ export async function prepareRequestContext(
       timestamp: new Date().toISOString(),
       summary,
       firstKeptEntryId: parts.recent[cut].id,
+      taskEntryId,
       tokensBefore: before,
       tokensAfter: after,
     });
