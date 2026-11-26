@@ -15,6 +15,7 @@ const commands = [
   { name: "login", description: "登录服务商" }, { name: "model", description: "切换模型" },
   { name: "status", description: "查看模型与登录状态" }, { name: "providers", description: "列出服务商及登录方式" },
   { name: "logout", description: "移除已保存的凭据" }, { name: "compact", description: "压缩会话历史" },
+  { name: "resume", description: "继续中断的任务" }, { name: "new", description: "开启新会话" },
   { name: "help", description: "显示命令" }, { name: "exit", description: "退出 Theta" },
 ];
 export const commandHelp = commands.map(c => `/${c.name}  ${c.description}`).join("\n");

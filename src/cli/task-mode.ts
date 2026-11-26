@@ -26,7 +26,7 @@ export async function runTask(command: TaskCommand, accounts: Accounts, cwd: str
     return opened;
   });
   if (latest) await sessions.open();
-  const resumeTask = resume && (!latest || sessions.current?.checkpoint.next === "model");
+  const resumeTask = resume && (!latest || sessions.current?.canResume);
   const singleRun = Boolean(task || resumeTask);
   if (tty && !singleRun) ui = new TerminalUI(cwd, modelLabel);
 
@@ -35,6 +35,7 @@ export async function runTask(command: TaskCommand, accounts: Accounts, cwd: str
     ui?.busy(input === "/compact" ? "正在压缩" : "等待模型", cancel);
     try {
       if (input === "/compact" && !sessions.current && !sessions.path) return log("[compact] 当前没有会话。");
+      if (input === undefined && !sessions.current && !sessions.path) return log("当前没有可恢复的会话。");
       const opening = !sessions.current;
       const session = await sessions.open();
       if (opening) {
@@ -55,11 +56,16 @@ export async function runTask(command: TaskCommand, accounts: Accounts, cwd: str
         if (singleRun) process.exitCode = 2;
       }
     } catch (cause) {
+      const session = sessions.current;
+      if (singleRun && session?.canResume) {
+        log("用 theta --resume 可继续当前目录最近写入的会话。要指定本次任务，请使用 theta --resume <会话文件>。");
+        log(`会话文件：${session.filePath}`);
+      }
       if (singleRun && !active.signal.aborted) throw cause;
       log(active.signal.aborted ? "本次操作已取消。" : cause instanceof Error ? cause.message : String(cause));
       if (singleRun) process.exitCode = 130;
-      const session = sessions.current;
-      if (active.signal.aborted && session?.acceptsInput) return;
+      if (singleRun || session?.acceptsInput) return;
+      if (session?.canResume) return log("输入 /resume 继续原任务，或输入 /new 开启新会话。");
       if (session && input !== "/compact") {
         log(`会话已保存在 ${session.filePath}。下一条输入将开启新会话。`);
         sessions.startNew();
@@ -73,6 +79,12 @@ export async function runTask(command: TaskCommand, accounts: Accounts, cwd: str
   async function handleLine(input: string): Promise<void> {
     const [name, ...params] = input.slice(1).split(/\s+/);
     if (input === "/help") return log(commandHelp);
+    if (input === "/resume") return submit();
+    if (input === "/new") {
+      sessions.startNew();
+      ui?.setSession(undefined);
+      return log("下一条任务将开启新会话。");
+    }
     if (!input.startsWith("/") || !isAccountCommand(name)) return submit(input);
     active = new AbortController();
     ui?.busy("账号配置", cancel);
