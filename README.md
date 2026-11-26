@@ -1,5 +1,7 @@
 # Theta
 
+[Theta 官网](https://juemimgcd.github.io/Theta/)
+
 Theta 是一个在终端中运行的编程助手。它可以读取项目代码、编辑文件、执行 shell 命令，并根据工具返回的结果继续工作。对话和工具结果保存在项目目录中，退出后可以从上次的检查点继续。
 
 Theta 使用 TypeScript 和 Bun 实现。服务商登录、模型目录和终端组件来自 [pi](https://github.com/earendil-works/pi)。Theta 自己管理工具执行、会话恢复，以及每次请求发送给模型的上下文。
