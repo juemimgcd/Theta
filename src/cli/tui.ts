@@ -3,13 +3,13 @@ import { relative, sep } from "node:path";
 import { isAIMessage, isToolMessage, type AIMessage, type BaseMessage } from "@langchain/core/messages";
 import type { AuthEvent, AuthPrompt } from "@earendil-works/pi-ai";
 import {
-  CombinedAutocompleteProvider, Container, CURSOR_MARKER, Editor, getKeybindings, hyperlink, Input, isKeyRelease, isKeyRepeat,
+  CombinedAutocompleteProvider, Container, CURSOR_MARKER, getKeybindings, hyperlink, Input, isKeyRelease, isKeyRepeat,
   Markdown, matchesKey, ProcessTerminal,
   ScrollView, SelectList, Spacer, Text, truncateToWidth, TuiAltScreen, VStack,
-  type Component, type SelectItem,
+  type AutocompleteItem, type Component, type SelectItem,
 } from "@earendil-works/pi-tui";
 import metadata from "../../package.json" with { type: "json" };
-import { accent, display, markdownTheme, muted, selectTheme, SessionFooter, ToolBlock, userMessage } from "./tui-components.ts";
+import { accent, display, markdownTheme, muted, selectTheme, SessionFooter, SessionHeader, TaskEditor, ToolBlock, userMessage } from "./tui-components.ts";
 import type { AccountUI } from "../coding-agent/accounts.ts";
 import type { AgentEvent } from "../agent/events.ts";
 import type { ToolHookCall } from "../agent/hooks.ts";
@@ -22,6 +22,18 @@ const commands = [
   { name: "help", description: "显示命令" }, { name: "exit", description: "退出 Theta" },
 ];
 export const commandHelp = commands.map(c => `/${c.name}  ${c.description}`).join("\n");
+
+class CommandAutocomplete extends CombinedAutocompleteProvider {
+  override applyCompletion(lines: string[], cursorLine: number, cursorCol: number, item: AutocompleteItem, prefix: string) {
+    // A key can arrive before the slash menu refreshes. Apply its selection only
+    // to the command prefix that produced it, never to newly typed arguments.
+    if (prefix.startsWith("/") && commands.some(command => command.name === item.value)) {
+      const beforeCursor = lines[cursorLine].slice(0, cursorCol).trimStart();
+      if (cursorLine !== 0 || beforeCursor !== prefix) return { lines, cursorLine, cursorCol };
+    }
+    return super.applyCompletion(lines, cursorLine, cursorCol, item, prefix);
+  }
+}
 
 class SecretInput extends Input {
   override render(width: number): string[] {
@@ -72,8 +84,8 @@ export class TerminalUI {
   private transcript = new Container();
   private scroll = new ScrollView(this.transcript, { primary: true, follow: "end", scrollbar: "auto" });
   private controls = new Container();
-  private footer: SessionFooter;
-  private editor = new Editor(this.screen, { borderColor: muted, selectList: selectTheme }, { paddingX: 1 });
+  private footer = new SessionFooter();
+  private editor = new TaskEditor(this.screen, { borderColor: muted, selectList: selectTheme }, { paddingX: 3 });
   private reply?: Markdown;
   private replyText = "";
   private calls: AIMessage["tool_calls"] = [];
@@ -86,11 +98,10 @@ export class TerminalUI {
 
   constructor(cwd: string, modelLabel: () => string) {
     this.modelLabel = modelLabel;
-    this.editor.setAutocompleteProvider(new CombinedAutocompleteProvider(commands, cwd));
+    this.editor.setAutocompleteProvider(new CommandAutocomplete(commands, cwd));
     const path = cwd === homedir() ? "~" : cwd.startsWith(homedir() + sep) ? "~" + cwd.slice(homedir().length) : cwd;
-    this.footer = new SessionFooter(path);
     this.transcript.addChild(new Spacer(1));
-    this.transcript.addChild(new Text(`${accent("Theta")} ${muted(`v${metadata.version}`)}`, 1, 0));
+    this.transcript.addChild(new SessionHeader(metadata.version, path));
     this.transcript.addChild(new Spacer(1));
     this.screen.setLayoutRoot(new VStack([
       { component: this.scroll, grow: 1, basis: 0, minSize: 1 }, this.controls, this.footer]));
@@ -154,6 +165,7 @@ export class TerminalUI {
 
   private addTool(name: string, id: string, args: unknown = this.calls?.find(call => call.id === id)?.args): ToolBlock {
     const block = new ToolBlock(name, args);
+    this.editor.hasToolHistory = true;
     this.transcript.addChild(new Spacer(1));
     this.transcript.addChild(block);
     return block;
@@ -226,11 +238,11 @@ export class TerminalUI {
   busy(label: string, cancel?: () => void): void {
     this.waiting = label;
     if (cancel) this.interrupted = cancel;
-    this.show(null, `${display(label)}  ·  Esc 取消`);
+    this.show(new Text(`${accent("●")} ${display(label)}`, 1, 0), "Esc 取消");
   }
 
   read(): Promise<string> {
-    this.show(this.editor, "Enter 发送 · Ctrl+J 换行 · Ctrl+O 工具详情 · /help 命令");
+    this.show(this.editor);
     return new Promise(resolve => {
       this.interrupted = () => resolve("/exit");
       this.editor.onSubmit = text => {
@@ -275,7 +287,7 @@ export class TerminalUI {
       const abort = () => { finish(); reject(signal.reason); };
       const submit = (value: string) => { finish(); resolve(value); };
       const panel = new Container();
-      panel.addChild(new Text(display(prompt.message), 1, 0));
+      panel.addChild(new Text(prompt.type === "approval" ? accent(display(prompt.message)) : display(prompt.message), 1, 0));
       let field: Component;
       let hint = "Enter 提交  ·  Esc 取消";
       if (prompt.type === "select" || prompt.type === "approval") {
