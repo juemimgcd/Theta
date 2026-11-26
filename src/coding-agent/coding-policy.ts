@@ -2,6 +2,8 @@ import { SystemMessage } from "@langchain/core/messages";
 import type { Hook } from "../agent/hooks.ts";
 import { truncateOutput } from "../agent/tools.ts";
 
+export const TOOL_RESULT_LIMIT = 8_000;
+
 export function createCodingPolicy(
   { readOnly, stopAfterTurn }: { readOnly: boolean; stopAfterTurn: boolean },
   log: (message: string) => void,
@@ -28,7 +30,7 @@ export function createCodingPolicy(
       }
     },
     afterTool(result) {
-      return truncateOutput(result.content, 8_000);
+      return truncateOutput(result.content, TOOL_RESULT_LIMIT);
     },
     afterTurn(turn) {
       if (stopAfterTurn && !turn.hasAnswer) {
