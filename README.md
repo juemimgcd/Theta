@@ -6,7 +6,7 @@ Theta 使用 TypeScript 和 Bun 实现。服务商登录、模型目录和终端
 
 ## 快速开始
 
-安装 Bun 后，从源码注册 `theta` 命令。项目 CI 使用 Bun 1.4.5。
+安装 [package.json](package.json) 中 `packageManager` 指定的 Bun 版本后，从源码注册 `theta` 命令。
 
 ```sh
 git clone https://github.com/juemimgcd/Theta.git
@@ -115,6 +115,8 @@ bun run check                 # TypeScript 类型检查
 bun test                      # 运行测试
 bun examples/session-flow.ts  # 离线演示会话写入与恢复
 ```
+
+每个 PR 和推送到 `main` 的提交都会触发 [CLI 检查](.github/workflows/ci.yml)。Ubuntu 和 macOS 分别运行以上三条命令，再通过 `bun link` 注册 CLI，从仓库外运行 `theta --help`。[依赖审计](.github/workflows/audit.yml) 每周一检查锁文件中生产依赖的中等及以上级别漏洞，也可以在 GitHub Actions 中手动运行。
 
 Theta 是 Alpha 七章教程的 TypeScript 重写。从终端入口跟到会话存储，可以看到一次工具调用如何变成可恢复的记录。
 
