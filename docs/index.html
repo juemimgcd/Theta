@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Theta — A terminal coding assistant with resumable sessions</title>
+  <meta name="description" content="Read code, review edits, and resume a coding session from a saved checkpoint. Explore Theta in the terminal and install it from source with Bun.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body id="top">
+  <header class="mast">
+    <div class="nav-wrap">
+      <a class="brand" href="#top"><i aria-hidden="true">θ</i> Theta</a>
+      <nav aria-label="Main navigation"><a href="https://github.com/juemimgcd/Theta">GitHub ↗</a><a class="nav-install" href="#install">Install Theta ↓</a></nav>
+    </div>
+  </header>
+  <main>
+    <section class="opening" aria-labelledby="title">
+      <div class="light" aria-hidden="true"><canvas></canvas></div>
+      <div class="hero">
+        <div class="hero-title"><small>THETA CLI / v0.1.0</small><h1 id="title">Theta<span>Pick up where you left off.</span></h1></div>
+        <p>A coding assistant for your terminal. Read code, review edits, and run commands.<br>Your project keeps the conversation and tool results, ready for the next session.</p>
+        <a class="action" href="#install"><b aria-hidden="true">↓</b> Install Theta</a>
+      </div>
+      <div class="terminal" id="session">
+        <aside aria-label="Session examples">
+          <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+          <div class="rail-brand"><i>θ</i> Theta</div>
+          <span class="rail-caption">Session examples</span>
+          <a href="#terminal-title" class="current">› Trace the CLI entry point</a>
+          <a href="#edit">Review an edit</a>
+          <a href="#resume">Resume a session</a>
+          <div class="rail-bottom"><span class="rail-caption">Working directory</span><code>~/Theta</code></div>
+        </aside>
+        <figure class="console">
+          <figcaption id="terminal-title">Trace the CLI entry point <code>~/Theta</code></figcaption>
+          <div class="transcript">
+            <p class="prompt"><b>›</b> What changes when I run <code>theta "task"</code> instead of <code>theta</code>?</p>
+            <div class="reads"><code>● Done · read · src/cli/main.ts</code><code>● Done · read · src/cli/task-mode.ts</code></div>
+            <p>Theta checks the command-line arguments and whether it’s running in an interactive terminal.</p>
+            <dl><dt>theta</dt><dd>Opens a conversation in your terminal. Give it a task, then ask follow-up questions.</dd><dt>theta "task"</dt><dd>Runs the task once and writes the final answer to standard output for use in a script.</dd></dl>
+          </div>
+          <div class="composer"><span>› Enter a task, or type / to see commands</span><small>Enter to send · Ctrl+J for a new line · Ctrl+O for tool details</small></div>
+        </figure>
+      </div>
+    </section>
+
+    <section class="workflow wrap" id="workflow" aria-labelledby="workflow-title">
+      <h2 id="workflow-title">Follow each edit.<br>Resume the session.</h2>
+      <div class="cards">
+        <article id="edit">
+          <header><h3>Review an edit</h3><p>See exactly what Theta wants to replace. In an interactive session, each edit waits for your approval.</p></header>
+          <div class="stage" aria-hidden="true">
+            <div class="pane main-pane"><div class="pane-title"><code>edit</code><span>example.ts</span></div>
+              <div class="diff"><code>− return "Untitled";</code><code>+ return "Draft";</code></div>
+              <div class="approval"><strong>Allow this edit?</strong><span>Deny once</span><span class="choice">Allow once</span></div>
+            </div>
+            <div class="pane overlay receipt"><div class="pane-title"><code>edit</code><span class="success">● Done</span></div><p>Replaced one match in example.ts.</p><code class="result-code">return "Draft";</code></div>
+          </div>
+        </article>
+        <article id="resume">
+          <header><h3>Resume from a checkpoint</h3><p>Once the edit result and checkpoint are saved, reopen the project and let Theta continue from that result.</p></header>
+          <div class="stage" aria-hidden="true">
+            <div class="pane main-pane"><div class="pane-title"><code>~/Theta</code><span>Terminal</span></div>
+              <div class="shell"><span>$ </span><code class="typed">theta --resume</code></div>
+              <div class="session-log"><code>.theta/sessions/…jsonl</code><div><code>message</code><span>edit result</span></div><div><code>checkpoint</code><span>next → model</span></div></div>
+            </div>
+            <div class="pane overlay"><div class="pane-title"><code>Theta</code><span>Resumed response</span></div><p>I changed the default title to <code>Draft</code>.</p></div>
+          </div>
+        </article>
+        <article id="tools">
+          <header><h3>Inspect a tool call</h3><p>Successful calls take up one line. Press Ctrl+O to see the arguments and output behind an answer.</p></header>
+          <div class="stage" aria-hidden="true">
+            <div class="pane main-pane"><div class="pane-title"><code>read</code><span>package.json</span></div>
+              <p class="success">● Done · read · package.json</p>
+              <div class="keycap">Ctrl + O</div>
+            </div>
+            <div class="pane overlay"><div class="pane-title"><code>package.json</code><span>Output excerpt</span></div><pre>"scripts": {
+  "start": "bun src/cli.ts",
+  "check": "tsc --noEmit"
+}</pre></div>
+          </div>
+        </article>
+        <article id="compact">
+          <header><h3>Make room for longer sessions</h3><p>Use /compact to summarize earlier turns. Theta sends the summary alongside recent messages and keeps the original history on disk.</p></header>
+          <div class="stage" aria-hidden="true">
+            <div class="pane main-pane"><div class="pane-title"><code>~/Theta</code><span>Current session</span></div>
+              <div class="shell"><span>› </span><code class="typed">/compact</code></div>
+              <div class="history"><span>User message</span><span>Tool result</span><span>Assistant reply</span></div>
+            </div>
+            <div class="pane overlay"><div class="pane-title"><code>compaction</code><span>Example summary</span></div><p>Traced the CLI entry point and changed the example file’s default title.</p><small>Next request · summary + recent turns</small></div>
+          </div>
+        </article>
+      </div>
+    </section>
+    <section class="install wrap" id="install" aria-labelledby="install-title">
+      <div><h2 id="install-title">Start in your terminal.</h2><p>Install Bun 1.4.5, then run these commands to link the CLI. Open your project, run <code>theta</code>, and enter <code>/login</code> to connect a provider.</p><a href="https://github.com/juemimgcd/Theta#快速开始">Read the setup guide ↗</a></div>
+      <div class="snippet"><div class="pane-title"><span>Install from source</span><button hidden id="copy" type="button">Copy commands</button></div><pre><code id="commands">git clone https://github.com/juemimgcd/Theta.git
+cd Theta
+bun install --frozen-lockfile --ignore-scripts
+bun link
+theta --help</code></pre></div>
+    </section>
+  </main>
+  <footer class="wrap"><a class="brand" href="#top"><i aria-hidden="true">θ</i> Theta</a><a href="https://github.com/juemimgcd/Theta">View source ↗</a></footer>
+  <script src="site.js"></script>
+  <script src="hero-background.js"></script>
+</body>
+</html>
