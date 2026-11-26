@@ -62,25 +62,30 @@ export class AgentSession {
     return this.manager.getHistoryMessages();
   }
 
+  /** The physical checkpoint at the end of the log. Use position to inspect resumable older logs. */
   get checkpoint(): CheckpointEntry {
     const checkpoint = this.manager.checkpoint;
     if (!checkpoint) throw new Error(`会话没有可用的末尾检查点：${this.filePath}`);
     return checkpoint;
   }
 
+  get position(): RunPosition | undefined {
+    return this.manager.position;
+  }
+
   get acceptsInput(): boolean {
-    return this.manager.position?.next === "input";
+    return this.position?.next === "input";
   }
 
   get canResume(): boolean {
-    return this.manager.position?.next === "model";
+    return this.position?.next === "model";
   }
 
   private async atBoundary<T>(work: (position: RunPosition) => Promise<T>): Promise<T> {
     if (this.busy) throw new Error("会话正在运行或压缩，请等待当前操作结束。");
     this.busy = true;
     try {
-      const position = this.manager.position;
+      const position = this.position;
       if (!position) throw new Error(`会话没有可用的恢复位置：${this.filePath}`);
       return await work(position);
     } finally {
