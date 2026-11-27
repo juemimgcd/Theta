@@ -1,0 +1,34 @@
+name: 故障报告
+description: 报告可以观察到的错误、回归或异常退出。
+labels: [bug, "status: triage"]
+body:
+  - type: textarea
+    id: behavior
+    attributes:
+      label: 实际结果与预期结果
+      description: 写明你执行的操作、看到的结果，以及你原本预期的行为。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 如何复现
+      description: 给出最短的命令或操作顺序。偶发问题请说明最近一次发生前做了什么。
+      placeholder: |
+        1. 在临时目录运行……
+        2. 输入……
+        3. 终端显示……
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 运行环境
+      description: 填写操作系统、Bun 版本（bun --version）和 Theta 版本或提交号（在源码目录运行 git rev-parse --short HEAD）。涉及显示时请附终端名称。
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 相关输出或截图
+      description: 仅摘录相关片段。请遮盖密钥、私人提示词和工作区内容，避免上传完整会话日志或账号配置。

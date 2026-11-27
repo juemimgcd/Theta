@@ -112,6 +112,8 @@ Theta 按序列化消息的 UTF-8 字节数估算 token 用量。以上五项也
 
 ## 开发
 
+提交问题或 PR 前，请查看[贡献指南](CONTRIBUTING.md)，了解 issue 表单、标签和验证要求。
+
 ```sh
 bun run check                 # TypeScript 类型检查
 bun test                      # 运行测试
