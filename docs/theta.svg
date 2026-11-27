@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title">
+  <title id="title">Theta</title>
+  <g transform="rotate(18 80 80)">
+    <path fill="#2545cc" fill-rule="evenodd" d="M80 8C109 8 126 37 126 76c0 43-20 76-49 76-28 0-44-31-44-70C33 40 52 8 80 8Zm4 12c-16 0-29 28-29 65 0 30 7 54 20 54 17 0 29-29 29-65 0-30-7-54-20-54Z"/>
+    <path fill="#2545cc" d="M48 71h47l-6 13H48z"/>
+  </g>
+</svg>

@@ -22,7 +22,8 @@ code, pre, .reads, .hero small { font-family: var(--mono) }
 .mast { position: fixed; z-index: 5; inset: 8px 0 auto; pointer-events: none }
 .nav-wrap { width: min(1140px, calc(100% - 48px)); min-height: 43px; margin: auto; display: flex; align-items: center; justify-content: space-between; pointer-events: auto; border-radius: 30px }
 .brand, .rail-brand { display: inline-flex; align-items: center; gap: 6px; font-size: 20px; font-weight: 620; letter-spacing: -.04em }
-.brand i, .rail-brand i { font: italic 30px/1 Georgia, serif }
+.brand img { padding: 2px; border-radius: 7px; background: #e7ecfb }
+.rail-brand i { font: italic 30px/1 Georgia, serif }
 nav { display: flex; align-items: center; gap: 12px; font-size: 13px }
 nav a { padding: 5px 12px; border-radius: 30px; background: #ffffff10 }
 .nav-install { display: none; color: #17191c; background: #f4f5f6 }
