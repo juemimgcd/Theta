@@ -1,0 +1,23 @@
+name: 功能建议
+description: 说明哪项工作受阻，以及什么变化能解决它。
+labels: [enhancement, "status: triage"]
+body:
+  - type: textarea
+    id: use-case
+    attributes:
+      label: 使用场景
+      description: 你想用 Theta 完成什么任务？目前在哪一步遇到了限制？
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: 期望的行为
+      description: 举一个具体例子，说明用户会执行什么操作、看到什么结果。
+    validations:
+      required: true
+  - type: textarea
+    id: workaround
+    attributes:
+      label: 现有做法
+      description: 如果已有绕行办法，可以说明它的成本或局限。
